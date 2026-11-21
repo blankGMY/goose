@@ -168,7 +168,9 @@ export default function PoolView() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="font-medium text-text-primary">{account.id}</span>
-                      <span className="text-sm text-text-secondary">{account.account}</span>
+                      <span className="text-sm text-text-secondary">
+                        {account.email ?? account.account}
+                      </span>
                       <span
                         className={`text-xs px-2 py-0.5 rounded-full ${badge.className}`}
                       >

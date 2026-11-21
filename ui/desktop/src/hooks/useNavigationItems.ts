@@ -1,5 +1,6 @@
 import {
   AppWindow,
+  Brain,
   Clock,
   FileText,
   History,
@@ -26,6 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'skills', path: '/skills', label: 'Skills', icon: Zap },
   { id: 'apps', path: '/apps', label: 'Apps', icon: AppWindow },
   { id: 'pool', path: '/pool', label: 'Pool', icon: Users },
+  { id: 'memory', path: '/memory', label: 'Memory', icon: Brain },
   { id: 'scheduler', path: '/schedules', label: 'Scheduler', icon: Clock },
   { id: 'extensions', path: '/extensions', label: 'Extensions', icon: Puzzle },
   { id: 'sessions', path: '/sessions', label: 'Session History', icon: History },
@@ -61,6 +63,10 @@ const navItemMessages = defineMessages({
   pool: {
     id: 'navigation.itemPool',
     defaultMessage: 'Pool',
+  },
+  memory: {
+    id: 'navigation.itemMemory',
+    defaultMessage: 'Memory',
   },
   scheduler: {
     id: 'navigation.itemScheduler',

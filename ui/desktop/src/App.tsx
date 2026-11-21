@@ -44,9 +44,10 @@ import PermissionSettingsView from './components/settings/permission/PermissionS
 
 import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/ExtensionsView';
 import RecipesView from './components/recipes/RecipesView';
-import SkillsView from './components/skills/SkillsView';
 import AppsView from './components/apps/AppsView';
 import PoolView from './components/pool/PoolView';
+import MemoryView from './components/memory/MemoryView';
+import SkillsManagerView from './components/skills-manager/SkillsManagerView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
 import { View, ViewOptions } from './utils/navigationUtils';
 
@@ -234,7 +235,7 @@ const RecipesRoute = () => {
 };
 
 const SkillsRoute = () => {
-  return <SkillsView />;
+  return <SkillsManagerView />;
 };
 
 const PermissionRoute = () => {
@@ -674,6 +675,7 @@ export function AppInner() {
               />
               <Route path="apps" element={<AppsView />} />
               <Route path="pool" element={<PoolView />} />
+              <Route path="memory" element={<MemoryView />} />
               <Route path="sessions" element={<SessionsRoute />} />
               <Route path="schedules" element={<SchedulesRoute />} />
               <Route path="recipes" element={<RecipesRoute />} />

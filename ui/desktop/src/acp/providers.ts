@@ -15,6 +15,7 @@ import type {
   UpdateCustomProviderRequest,
 } from '../types/providers';
 import { getAcpClient } from './acpConnection';
+import { mergeCodexExtraModels } from './codexModels';
 
 export type { CanonicalModelInfoDto, ProviderSecretDto };
 
@@ -201,7 +202,8 @@ export async function acpRefreshProviderDetails(
 export async function acpListProviderModels(providerId: string) {
   const client = await getAcpClient();
   const { entries } = await client.goose.providersList_unstable({ providerIds: [providerId] });
-  return entries.find((e) => e.providerId === providerId)?.models ?? [];
+  const models = entries.find((e) => e.providerId === providerId)?.models ?? [];
+  return mergeCodexExtraModels(providerId, models);
 }
 
 export async function acpListProviderCatalogEntries(

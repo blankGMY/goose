@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
-import { AudioLines, ChevronDown, ChevronRight } from 'lucide-react';
+import { AudioLines, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigationContext } from './NavigationContext';
 import { useConfig } from '../ConfigContext';
@@ -14,7 +14,7 @@ import {
 import { AppEvents } from '../../constants/events';
 import { InlineEditText } from '../common/InlineEditText';
 import { SessionIndicators } from '../SessionIndicators';
-import { acpRenameSession, type SessionListItem } from '../../acp/sessions';
+import { acpDeleteSession, acpRenameSession, type SessionListItem } from '../../acp/sessions';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 import { formatMessageTimestamp } from '../../utils/timeUtils';
 import { cn } from '../../utils';
@@ -120,6 +120,7 @@ interface SessionRowProps {
   status: SessionStatus | undefined;
   onClick: () => void;
   onRenamed: () => void;
+  onDeleted?: () => void;
 }
 
 const formatTimestamp = (value?: string): string | null => {
@@ -176,9 +177,11 @@ const SessionRow: React.FC<SessionRowProps> = ({
   status,
   onClick,
   onRenamed,
+  onDeleted,
 }) => {
   const intl = useIntl();
   const [isEditing, setIsEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const isStreaming = status?.streamState === 'streaming';
   const hasError = status?.streamState === 'error';
@@ -198,7 +201,7 @@ const SessionRow: React.FC<SessionRowProps> = ({
         <div
           onClick={() => !isEditing && onClick()}
           className={cn(
-            'flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer text-sm',
+            'group flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer text-sm',
             'hover:bg-background-tertiary/60 transition-colors',
             active && 'bg-background-tertiary'
           )}
@@ -229,6 +232,31 @@ const SessionRow: React.FC<SessionRowProps> = ({
             />
           )}
           <SessionIndicators isStreaming={isStreaming} hasUnread={hasUnread} hasError={hasError} />
+          {!isStreaming && (
+            <button
+              type="button"
+              aria-label={confirmingDelete ? '确认删除会话' : '删除会话'}
+              title={confirmingDelete ? '再点一次确认删除' : '删除会话'}
+              className={cn(
+                'flex-shrink-0 rounded-full p-0.5 transition-opacity',
+                confirmingDelete
+                  ? 'opacity-100 text-red-500'
+                  : 'opacity-0 group-hover:opacity-100 text-text-secondary hover:text-red-500'
+              )}
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (!confirmingDelete) {
+                  setConfirmingDelete(true);
+                  setTimeout(() => setConfirmingDelete(false), 3000);
+                  return;
+                }
+                await acpDeleteSession(session.id);
+                onDeleted?.();
+              }}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </TooltipTrigger>
       <TooltipContent side="right" align="start" className="max-w-xs text-left">
@@ -248,14 +276,16 @@ export const Navigation: React.FC<{
 
   const appsExtensionEnabled = !!extensionsList.find((ext) => ext.name === 'apps')?.enabled;
   const poolExtensionEnabled = !!extensionsList.find((ext) => ext.name === 'pool')?.enabled;
+  const memoryExtensionEnabled = !!extensionsList.find((ext) => ext.name === 'memory')?.enabled;
 
   const visibleItems = useMemo<NavItem[]>(() => {
     return NAV_ITEMS.filter((item) => {
       if (item.path === '/apps') return appsExtensionEnabled;
       if (item.path === '/pool') return poolExtensionEnabled;
+      if (item.path === '/memory') return memoryExtensionEnabled;
       return true;
     });
-  }, [appsExtensionEnabled, poolExtensionEnabled]);
+  }, [appsExtensionEnabled, poolExtensionEnabled, memoryExtensionEnabled]);
 
   const isActive = useCallback((path: string) => location.pathname === path, [location.pathname]);
 
@@ -400,6 +430,7 @@ export const Navigation: React.FC<{
                             handleSessionClick(session.id);
                           }}
                           onRenamed={fetchSessions}
+                          onDeleted={fetchSessions}
                         />
                       ))}
                   </React.Fragment>
@@ -418,6 +449,7 @@ export const Navigation: React.FC<{
                     handleSessionClick(session.id);
                   }}
                   onRenamed={fetchSessions}
+                  onDeleted={fetchSessions}
                 />
               ))
             )}

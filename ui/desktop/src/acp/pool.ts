@@ -18,6 +18,7 @@ export interface PoolWindow {
 export interface PoolAccount {
   id: string;
   account: string; // masked account id
+  email: string | null;
   priority: number;
   state: string; // active | standby | parked
   is_active: boolean;

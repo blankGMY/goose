@@ -13,6 +13,7 @@ import {
 import { getProviderMetadata, fetchModelReasoning } from '../modelInterface';
 import { getModelDisplayName } from '../predefinedModelsUtils';
 import { acpReadThinkingEffort } from '../../../../acp/providers';
+import PoolQuotaBadge from '../../../pool/PoolQuotaBadge';
 
 import { ModelSettingsPanel } from '../../localInference/ModelSettingsPanel';
 import { ScrollArea } from '../../../ui/scroll-area';
@@ -315,6 +316,7 @@ export default function ModelsBottomBar({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      <PoolQuotaBadge />
 
       {isAddModelModalOpen ? (
         <SwitchModelModal
