@@ -5,16 +5,44 @@ import type {
 } from '@aaif/goose-acp-client';
 import type { Message } from '../types/message';
 import { getAcpClient } from './acpConnection';
+import {
+  getPcWorkspace,
+  markPcWorkspaceBriefed,
+  pcWorkspaceBriefing,
+} from './pcWorkspace';
 
 export async function acpPromptSession(
   sessionId: string,
   message: Message
 ): Promise<PromptResponse> {
   const client = await getAcpClient();
-  return client.connection.agent.request(methods.agent.session.prompt, {
+  // If this session has a PC workspace the agent has not been briefed
+  // about yet (new session, or the folder changed), prefix the briefing
+  // so the agent works in that folder via the windows extension.
+  const entry = getPcWorkspace(sessionId);
+  let outgoing = message;
+  let briefingPath: string | null = null;
+  if (entry && entry.briefedPath !== entry.path) {
+    briefingPath = entry.path;
+    const briefing = pcWorkspaceBriefing(entry.path);
+    const content = [...message.content];
+    const idx = content.findIndex((c) => c.type === 'text');
+    if (idx >= 0) {
+      const block = content[idx] as { type: 'text'; text: string };
+      content[idx] = { ...block, text: `${briefing}\n${block.text}` };
+    } else {
+      content.unshift({ type: 'text', text: briefing } as Message['content'][number]);
+    }
+    outgoing = { ...message, content };
+  }
+  const response = await client.connection.agent.request(methods.agent.session.prompt, {
     sessionId,
-    prompt: messageToAcpPromptContent(message),
+    prompt: messageToAcpPromptContent(outgoing),
   });
+  if (briefingPath) {
+    markPcWorkspaceBriefed(sessionId);
+  }
+  return response;
 }
 
 export async function acpCancelPrompt(sessionId: string): Promise<void> {

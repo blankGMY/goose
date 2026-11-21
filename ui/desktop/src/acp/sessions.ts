@@ -8,6 +8,13 @@ import {
 } from '@agentclientprotocol/sdk/unstable';
 import type { GooseExtension, SessionExportFormat } from '@aaif/goose-acp-client';
 import { getAcpClient } from './acpConnection';
+import {
+  clearPcWorkspace,
+  getPcWorkspace,
+  isWindowsAbsPath,
+  PC_FALLBACK_CWD,
+  setPcWorkspace,
+} from './pcWorkspace';
 import type { ExtensionLoadResult } from '../types/extensions';
 import type { Session } from '../types/session';
 import type { Recipe } from '../recipe';
@@ -95,7 +102,7 @@ export function sessionInfoToSession(s: SessionInfo, loadMeta: LoadSessionMeta =
   return {
     id: String(s.sessionId),
     name: s.title ?? '',
-    working_dir: loadMeta.workingDir ?? s.cwd,
+    working_dir: loadMeta.workingDir ?? getPcWorkspace(String(s.sessionId))?.path ?? s.cwd,
     created_at: createdAt,
     updated_at: updatedAt,
     last_message_at: meta.lastMessageAt,
@@ -118,7 +125,7 @@ function sessionInfoToListItem(s: SessionInfo): SessionListItem {
   return {
     id: String(s.sessionId),
     name: s.title ?? '',
-    workingDir: s.cwd,
+    workingDir: getPcWorkspace(String(s.sessionId))?.path ?? s.cwd,
     updatedAt: s.updatedAt ?? '',
     messageCount: meta.messageCount ?? 0,
     lastMessageAt: meta.lastMessageAt,
@@ -258,9 +265,19 @@ export async function acpNewSession(
   if (recipe?.recipeParameterScopeId) {
     meta.recipeParameterScopeId = recipe.recipeParameterScopeId;
   }
-  const request: NewSessionRequest = { cwd, mcpServers: [], _meta: meta };
+  // A Windows folder cannot be a session cwd on the Pi backend; swap in a
+  // valid Pi path and remember the real folder as the PC workspace.
+  const pcWorkspace = isWindowsAbsPath(cwd) ? cwd : null;
+  const request: NewSessionRequest = {
+    cwd: pcWorkspace ? PC_FALLBACK_CWD : cwd,
+    mcpServers: [],
+    _meta: meta,
+  };
   const response = await client.connection.agent.request(methods.agent.session.new, request);
   const sessionId = String(response.sessionId);
+  if (pcWorkspace) {
+    setPcWorkspace(sessionId, pcWorkspace);
+  }
   const sessionInfoResponse = await client.goose.sessionInfo_unstable({ sessionId });
 
   return {
@@ -287,6 +304,17 @@ export async function acpRenameSession(sessionId: string, title: string): Promis
 
 export async function acpUpdateWorkingDir(sessionId: string, workingDir: string): Promise<void> {
   const client = await getAcpClient();
+  if (isWindowsAbsPath(workingDir)) {
+    // See acpNewSession: keep the server on a valid Pi path and record the
+    // Windows folder as this session's PC workspace instead.
+    setPcWorkspace(sessionId, workingDir);
+    await client.goose.sessionWorkingDirUpdate_unstable({
+      sessionId,
+      workingDir: PC_FALLBACK_CWD,
+    });
+    return;
+  }
+  clearPcWorkspace(sessionId);
   await client.goose.sessionWorkingDirUpdate_unstable({ sessionId, workingDir });
 }
 
