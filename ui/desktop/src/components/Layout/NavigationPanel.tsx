@@ -247,13 +247,15 @@ export const Navigation: React.FC<{
   const { extensionsList } = useConfig();
 
   const appsExtensionEnabled = !!extensionsList.find((ext) => ext.name === 'apps')?.enabled;
+  const poolExtensionEnabled = !!extensionsList.find((ext) => ext.name === 'pool')?.enabled;
 
   const visibleItems = useMemo<NavItem[]>(() => {
     return NAV_ITEMS.filter((item) => {
       if (item.path === '/apps') return appsExtensionEnabled;
+      if (item.path === '/pool') return poolExtensionEnabled;
       return true;
     });
-  }, [appsExtensionEnabled]);
+  }, [appsExtensionEnabled, poolExtensionEnabled]);
 
   const isActive = useCallback((path: string) => location.pathname === path, [location.pathname]);
 

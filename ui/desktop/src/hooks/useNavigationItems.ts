@@ -6,6 +6,7 @@ import {
   MessageSquarePlus,
   Puzzle,
   Settings,
+  Users,
   Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -24,6 +25,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'recipes', path: '/recipes', label: 'Recipes', icon: FileText },
   { id: 'skills', path: '/skills', label: 'Skills', icon: Zap },
   { id: 'apps', path: '/apps', label: 'Apps', icon: AppWindow },
+  { id: 'pool', path: '/pool', label: 'Pool', icon: Users },
   { id: 'scheduler', path: '/schedules', label: 'Scheduler', icon: Clock },
   { id: 'extensions', path: '/extensions', label: 'Extensions', icon: Puzzle },
   { id: 'sessions', path: '/sessions', label: 'Session History', icon: History },
@@ -55,6 +57,10 @@ const navItemMessages = defineMessages({
   apps: {
     id: 'navigation.itemApps',
     defaultMessage: 'Apps',
+  },
+  pool: {
+    id: 'navigation.itemPool',
+    defaultMessage: 'Pool',
   },
   scheduler: {
     id: 'navigation.itemScheduler',

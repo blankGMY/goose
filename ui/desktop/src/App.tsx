@@ -46,6 +46,7 @@ import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/E
 import RecipesView from './components/recipes/RecipesView';
 import SkillsView from './components/skills/SkillsView';
 import AppsView from './components/apps/AppsView';
+import PoolView from './components/pool/PoolView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
 import { View, ViewOptions } from './utils/navigationUtils';
 
@@ -672,6 +673,7 @@ export function AppInner() {
                 }
               />
               <Route path="apps" element={<AppsView />} />
+              <Route path="pool" element={<PoolView />} />
               <Route path="sessions" element={<SessionsRoute />} />
               <Route path="schedules" element={<SchedulesRoute />} />
               <Route path="recipes" element={<RecipesRoute />} />
