@@ -277,15 +277,17 @@ export const Navigation: React.FC<{
   const appsExtensionEnabled = !!extensionsList.find((ext) => ext.name === 'apps')?.enabled;
   const poolExtensionEnabled = !!extensionsList.find((ext) => ext.name === 'pool')?.enabled;
   const memoryExtensionEnabled = !!extensionsList.find((ext) => ext.name === 'memory')?.enabled;
+  const windowsExtensionEnabled = !!extensionsList.find((ext) => ext.name === 'windows')?.enabled;
 
   const visibleItems = useMemo<NavItem[]>(() => {
     return NAV_ITEMS.filter((item) => {
       if (item.path === '/apps') return appsExtensionEnabled;
       if (item.path === '/pool') return poolExtensionEnabled;
       if (item.path === '/memory') return memoryExtensionEnabled;
+      if (item.path === '/assistant') return windowsExtensionEnabled;
       return true;
     });
-  }, [appsExtensionEnabled, poolExtensionEnabled, memoryExtensionEnabled]);
+  }, [appsExtensionEnabled, poolExtensionEnabled, memoryExtensionEnabled, windowsExtensionEnabled]);
 
   const isActive = useCallback((path: string) => location.pathname === path, [location.pathname]);
 
