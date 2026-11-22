@@ -269,6 +269,157 @@ pub fn tool_ids_to_summarize(
         .collect()
 }
 
+/// Approximate wire size of a message in characters: the JSON form of its
+/// content, which is what the provider payload is built from. Plain-text
+/// helpers like `as_concat_text` miss tool results entirely, so they cannot
+/// be used to size a conversation.
+pub fn message_content_chars(message: &Message) -> usize {
+    serde_json::to_string(&message.content)
+        .map(|json| json.chars().count())
+        .unwrap_or(0)
+}
+
+/// A tool request/response pair selected for deterministic pruning.
+pub struct PrunableToolPair {
+    pub tool_name: String,
+    pub total_chars: usize,
+    /// (message id, current user visibility) for every message of the pair.
+    pub messages: Vec<(String, bool)>,
+    pub last_created: i64,
+}
+
+/// Selects the oldest bulky tool pairs outside the protected tail of the
+/// conversation until `chars_to_free` characters are covered. The protected
+/// tail starts at the `keep_turns`-th real user message counted from the
+/// end, so the current turn is always protected when `keep_turns >= 1`.
+/// Grouping mirrors `tool_ids_to_summarize`: a pair is eligible only when
+/// every message carrying its ids is agent-visible and sits before the
+/// boundary, the request/response id sets match exactly, and the pair's
+/// combined text reaches `min_chars`.
+pub fn tool_pairs_to_prune(
+    conversation: &Conversation,
+    keep_turns: usize,
+    min_chars: usize,
+    chars_to_free: usize,
+) -> Vec<PrunableToolPair> {
+    let messages = conversation.messages();
+
+    let mut seen = 0usize;
+    let mut boundary = None;
+    for (idx, message) in messages.iter().enumerate().rev() {
+        // Real user turns only: tool responses also travel as user-role
+        // messages, so require an actual text part.
+        let is_user_turn = message.role == Role::User
+            && message.is_user_visible()
+            && message
+                .content
+                .iter()
+                .any(|content| matches!(content, MessageContent::Text(_)));
+        if is_user_turn {
+            seen += 1;
+            if seen == keep_turns.max(1) {
+                boundary = Some(idx);
+                break;
+            }
+        }
+    }
+    let Some(boundary) = boundary else {
+        return Vec::new();
+    };
+
+    // Tool ids in order of first appearance before the boundary.
+    let mut order: Vec<String> = Vec::new();
+    for message in &messages[..boundary] {
+        if !message.is_agent_visible() {
+            continue;
+        }
+        for content in &message.content {
+            if let MessageContent::ToolRequest(request) = content {
+                if !order.contains(&request.id) {
+                    order.push(request.id.clone());
+                }
+            }
+        }
+    }
+
+    let mut selected = Vec::new();
+    let mut freed = 0usize;
+    for tool_id in order {
+        if freed >= chars_to_free {
+            break;
+        }
+        let pair: Vec<(usize, &Message)> = messages
+            .iter()
+            .enumerate()
+            .filter(|(_, message)| {
+                message.content.iter().any(|content| match content {
+                    MessageContent::ToolRequest(request) => request.id == tool_id,
+                    MessageContent::ToolResponse(response) => response.id == tool_id,
+                    _ => false,
+                })
+            })
+            .collect();
+        if pair.is_empty()
+            || pair.iter().any(|(idx, message)| {
+                *idx >= boundary || !message.is_agent_visible() || message.id.is_none()
+            })
+        {
+            continue;
+        }
+        let request_ids: std::collections::HashSet<&str> = pair
+            .iter()
+            .flat_map(|(_, message)| message.get_tool_request_ids())
+            .collect();
+        let response_ids: std::collections::HashSet<&str> = pair
+            .iter()
+            .flat_map(|(_, message)| message.get_tool_response_ids())
+            .collect();
+        if request_ids != response_ids {
+            continue;
+        }
+        let total_chars: usize = pair
+            .iter()
+            .map(|(_, message)| message_content_chars(message))
+            .sum();
+        if total_chars < min_chars {
+            continue;
+        }
+        let tool_name = pair
+            .iter()
+            .flat_map(|(_, message)| &message.content)
+            .find_map(|content| match content {
+                MessageContent::ToolRequest(request) if request.id == tool_id => request
+                    .tool_call
+                    .as_ref()
+                    .ok()
+                    .map(|tool_call| tool_call.name.to_string()),
+                _ => None,
+            })
+            .unwrap_or_else(|| "tool".to_string());
+        let last_created = pair
+            .iter()
+            .map(|(_, message)| message.created)
+            .max()
+            .unwrap_or(0);
+        selected.push(PrunableToolPair {
+            tool_name,
+            total_chars,
+            messages: pair
+                .iter()
+                .map(|(_, message)| {
+                    (
+                        message.id.clone().unwrap_or_default(),
+                        message.is_user_visible(),
+                    )
+                })
+                .collect(),
+            last_created,
+        });
+        freed += total_chars;
+    }
+    selected
+}
+
 fn agent_visible_tool_pair(conversation: &Conversation, tool_id: &str) -> Result<Vec<Message>> {
     let matching_messages = conversation
         .messages()

@@ -132,6 +132,12 @@ pub struct TurnSettings {
     pub standalone_compaction: bool,
     /// `None` derives it from the context limit.
     pub tool_call_cutoff: Option<usize>,
+    /// Model for summarization/compaction; `None` keeps the session model.
+    pub summary_model: Option<String>,
+    pub prune_enabled: bool,
+    pub prune_token_budget: usize,
+    pub prune_min_chars: usize,
+    pub prune_keep_turns: usize,
     pub auto_effort: Option<Arc<dyn Operation<Session, GooseEffect>>>,
     pub context_relevance: Option<Arc<dyn oi_kit_providers::decision::DecisionProvider>>,
 }
@@ -179,6 +185,28 @@ impl TurnSettings {
                 .get_param::<bool>("GOOSE_STANDALONE_COMPACTION")
                 .unwrap_or(false),
             tool_call_cutoff: config.get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF").ok(),
+            summary_model: config
+                .get_param::<String>("GOOSE_SUMMARY_MODEL")
+                .ok()
+                .filter(|name| !name.trim().is_empty())
+                .or_else(|| {
+                    config
+                        .get_param::<String>("GOOSE_SUBAGENT_MODEL")
+                        .ok()
+                        .filter(|name| !name.trim().is_empty())
+                }),
+            prune_enabled: config
+                .get_param::<bool>("GOOSE_PRUNE_ENABLED")
+                .unwrap_or(false),
+            prune_token_budget: config
+                .get_param::<usize>("GOOSE_PRUNE_TOKEN_BUDGET")
+                .unwrap_or(60_000),
+            prune_min_chars: config
+                .get_param::<usize>("GOOSE_PRUNE_MIN_CHARS")
+                .unwrap_or(2_000),
+            prune_keep_turns: config
+                .get_param::<usize>("GOOSE_PRUNE_KEEP_TURNS")
+                .unwrap_or(3),
             auto_effort: auto_effort_from_config(provider, model_config),
             context_relevance: crate::agents::state_machine_builder::context_relevance_provider(
                 config, provider,
@@ -935,6 +963,11 @@ impl StateMachineServices {
             standalone_compaction: settings.standalone_compaction,
             tool_call_cutoff,
             tool_pair_summarization: settings.tool_pair_summarization,
+            summary_model: settings.summary_model.clone(),
+            prune_enabled: settings.prune_enabled,
+            prune_token_budget: settings.prune_token_budget,
+            prune_min_chars: settings.prune_min_chars,
+            prune_keep_turns: settings.prune_keep_turns,
             defer_tools: settings.defer_tools,
             always_load_tools: settings.always_load_tools.clone(),
             session_manager: self.session_manager.clone(),

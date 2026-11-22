@@ -24,8 +24,8 @@ use crate::agents::state_machine::{
     PlatformExtensionOperation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
     SlashCommandOperation, StateMachine, StatusOperation, Step, StopHookOperation,
     SubagentOperation, SubdirectoryHintOperation, ThinkingRecoveryOperation, ToolApprovalOperation,
-    ToolDeferral, ToolDeferralOperation, ToolPairCompactionOperation, UnavailableDecisions,
-    UnhandledToolCallsOperation, NO_SKILLS_HELP,
+    ToolDeferral, ToolDeferralOperation, ToolPairCompactionOperation, ToolPruningOperation,
+    UnavailableDecisions, UnhandledToolCallsOperation, NO_SKILLS_HELP,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -46,6 +46,11 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) standalone_compaction: bool,
     pub(crate) tool_call_cutoff: usize,
     pub(crate) tool_pair_summarization: bool,
+    pub(crate) summary_model: Option<String>,
+    pub(crate) prune_enabled: bool,
+    pub(crate) prune_token_budget: usize,
+    pub(crate) prune_min_chars: usize,
+    pub(crate) prune_keep_turns: usize,
     pub(crate) defer_tools: bool,
     pub(crate) always_load_tools: Vec<String>,
     pub(crate) session_manager: Arc<SessionManager>,
@@ -112,6 +117,11 @@ pub(crate) fn build_state_machine(
         standalone_compaction,
         tool_call_cutoff,
         tool_pair_summarization,
+        summary_model,
+        prune_enabled,
+        prune_token_budget,
+        prune_min_chars,
+        prune_keep_turns,
         defer_tools,
         always_load_tools,
         session_manager,
@@ -130,6 +140,17 @@ pub(crate) fn build_state_machine(
         context_relevance,
     } = config;
     let manages_own_context = provider.manages_own_context();
+
+    // Summaries (compaction and tool-pair) run on a cheaper model when one
+    // is configured; the session model stays untouched for real work.
+    let summary_model_config = match &summary_model {
+        Some(name) if name != &model_config.model_name => {
+            let mut config = model_config.clone();
+            config.model_name = name.clone();
+            config
+        }
+        _ => model_config.clone(),
+    };
     let deferral = Arc::new(ToolDeferral::new(defer_tools, always_load_tools));
 
     let skills: Arc<dyn Operation<Session, GooseEffect> + '_> = Arc::new(
@@ -157,7 +178,7 @@ pub(crate) fn build_state_machine(
             CompactionOperation::new(
                 Arc::new(GooseCompactionModel::new(
                     provider.clone(),
-                    model_config.clone(),
+                    summary_model_config.clone(),
                 )),
                 Arc::new(GooseTokenEstimator),
                 context_limit,
@@ -211,9 +232,15 @@ pub(crate) fn build_state_machine(
             ),
         ),
         Arc::new(SteerOperation::new(steer_queue)),
+        Arc::new(ToolPruningOperation::new(
+            prune_token_budget,
+            prune_min_chars,
+            prune_keep_turns,
+            prune_enabled && !manages_own_context,
+        )),
         Arc::new(ToolPairCompactionOperation::new(
             provider.clone(),
-            model_config.clone(),
+            summary_model_config.clone(),
             tool_call_cutoff,
             tool_pair_summarization && !manages_own_context,
         )),
