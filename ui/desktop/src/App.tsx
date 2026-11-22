@@ -47,7 +47,7 @@ import RecipesView from './components/recipes/RecipesView';
 import AppsView from './components/apps/AppsView';
 import PoolView from './components/pool/PoolView';
 import MemoryView from './components/memory/MemoryView';
-import AssistantView from './components/assistant/AssistantView';
+import BotView from './components/assistant/BotView';
 import SkillsManagerView from './components/skills-manager/SkillsManagerView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
 import { View, ViewOptions } from './utils/navigationUtils';
@@ -677,7 +677,7 @@ export function AppInner() {
               <Route path="apps" element={<AppsView />} />
               <Route path="pool" element={<PoolView />} />
               <Route path="memory" element={<MemoryView />} />
-              <Route path="assistant" element={<AssistantView />} />
+              <Route path="assistant" element={<BotView />} />
               <Route path="sessions" element={<SessionsRoute />} />
               <Route path="schedules" element={<SchedulesRoute />} />
               <Route path="recipes" element={<RecipesRoute />} />
