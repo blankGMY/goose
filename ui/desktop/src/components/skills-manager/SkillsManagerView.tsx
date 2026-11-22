@@ -183,7 +183,7 @@ export default function SkillsManagerView() {
                   )}
                   {isAutoSkill(skill) && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
-                      自动维护
+                      自创建
                     </span>
                   )}
                 </div>
@@ -257,6 +257,11 @@ export default function SkillsManagerView() {
                     <h2 className="text-base font-semibold text-text-primary">{selected.name}</h2>
                     <p className="text-sm text-text-secondary mt-1">{selected.description}</p>
                     <p className="text-xs text-text-secondary mt-1 break-all">{selected.path}</p>
+                    {isAutoSkill(selected) && (
+                      <p className="text-xs mt-2 inline-block rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-1">
+                        自创建技能：由 agent 在夜间整理时自动创建并维护，它可被夜间任务优化或删除；你也可以在这里编辑或删除。
+                      </p>
+                    )}
                   </div>
                   {writable && (
                     <div className="flex gap-2 shrink-0">
