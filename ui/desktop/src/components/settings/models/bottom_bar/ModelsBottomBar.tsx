@@ -365,7 +365,11 @@ export default function ModelsBottomBar({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      <CustomBottomBarExtras />
+      <CustomBottomBarExtras
+        sessionId={sessionId}
+        sessionModel={currentModel}
+        sessionProvider={currentProvider}
+      />
 
       {isAddModelModalOpen ? (
         <SwitchModelModal

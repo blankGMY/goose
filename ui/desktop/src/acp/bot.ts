@@ -166,3 +166,27 @@ export async function botSettingsSave(settings: Partial<BotSettings>): Promise<B
   });
   return data.settings;
 }
+
+export interface HandoffStatus {
+  state: string;
+  seed?: string;
+  tokens?: number;
+  occupancy?: number;
+  window?: number;
+  ratio?: number;
+  l4_by?: string;
+  error?: string;
+}
+
+/** Start generating a handoff package for any session (interactive or
+ * bot). The bot service only generates the package; the caller owns
+ * the session lifecycle (preview + successor creation). */
+export async function botHandoffPackage(
+  sessionId: string
+): Promise<{ job: string; state: string }> {
+  return callBotTool('bot_handoff_package', { session_id: sessionId });
+}
+
+export async function botHandoffStatus(job: string): Promise<HandoffStatus> {
+  return callBotTool('bot_handoff_status', { job });
+}
