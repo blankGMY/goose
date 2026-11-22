@@ -1,0 +1,95 @@
+name: Build Pi binary (aarch64)
+
+# Builds the goose CLI for the Raspberry Pi (aarch64, native ARM runner,
+# full default features incl. local-inference) and publishes the tarball
+# to the rolling "pi-build" release for deployment.
+on:
+  workflow_dispatch:
+  push:
+    branches: [custom/pool-page]
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/build-pi.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-pi-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-pi:
+    name: Build goose for Pi (aarch64)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libdbus-1-dev \
+            libxcb1-dev \
+            libclang-dev \
+            clang \
+            cmake \
+            perl
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: pi-aarch64
+
+      - name: Build CLI (full default features)
+        env:
+          RUST_BACKTRACE: 1
+        run: |
+          source ./bin/activate-hermit
+          export TARGET="aarch64-unknown-linux-gnu"
+          rustup target add "${TARGET}"
+          rustup show
+          cargo build --release --target "${TARGET}" -p goose-cli --bin goose
+
+      - name: Smoke test the binary
+        run: |
+          file target/aarch64-unknown-linux-gnu/release/goose
+          target/aarch64-unknown-linux-gnu/release/goose --version
+
+      - name: Package
+        run: |
+          cd target/aarch64-unknown-linux-gnu/release
+          tar -czf goose-aarch64-unknown-linux-gnu.tar.gz goose
+          sha256sum goose-aarch64-unknown-linux-gnu.tar.gz > goose-aarch64-unknown-linux-gnu.tar.gz.sha256
+          ls -lh goose-aarch64-unknown-linux-gnu.tar.gz
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: goose-aarch64-unknown-linux-gnu
+          path: |
+            target/aarch64-unknown-linux-gnu/release/goose-aarch64-unknown-linux-gnu.tar.gz
+            target/aarch64-unknown-linux-gnu/release/goose-aarch64-unknown-linux-gnu.tar.gz.sha256
+          retention-days: 14
+
+      - name: Publish to rolling pi-build release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view pi-build >/dev/null 2>&1; then
+            gh release create pi-build --prerelease \
+              --title "Pi build (rolling)" \
+              --notes "Rolling aarch64 build of the goose CLI for the Raspberry Pi, from branch custom/pool-page."
+          fi
+          gh release upload pi-build \
+            target/aarch64-unknown-linux-gnu/release/goose-aarch64-unknown-linux-gnu.tar.gz \
+            target/aarch64-unknown-linux-gnu/release/goose-aarch64-unknown-linux-gnu.tar.gz.sha256 \
+            --clobber
+          gh release edit pi-build --notes "Built from commit ${GITHUB_SHA} at $(date -u +%Y-%m-%dT%H:%M:%SZ). Full default features (incl. local-inference), native aarch64 runner."
