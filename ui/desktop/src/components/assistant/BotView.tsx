@@ -219,7 +219,7 @@ export default function BotView() {
                   <option value="low">低</option>
                   <option value="medium">中</option>
                   <option value="high">高</option>
-                  <option value="max">最高</option>
+                  <option value="max">极高</option>
                 </select>
               </label>
               <Button size="sm" onClick={() => void saveSettings()}>

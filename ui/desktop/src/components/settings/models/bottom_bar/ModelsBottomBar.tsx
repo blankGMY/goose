@@ -13,6 +13,7 @@ import {
 import { getProviderMetadata, fetchModelReasoning } from '../modelInterface';
 import { getModelDisplayName } from '../predefinedModelsUtils';
 import { acpReadThinkingEffort } from '../../../../acp/providers';
+import type { ThinkingEffort } from '../../../../types/providers';
 import CustomBottomBarExtras from '../../../pool/CustomBottomBarExtras';
 import QuickModelSections from '../../../bottom_menu/QuickModelSections';
 
@@ -129,6 +130,44 @@ export default function ModelsBottomBar({
   );
   const loadingModelLabel = intl.formatMessage(i18n.loadingModel);
   const triggerLabel = isModelLoading ? loadingModelLabel : displayModel;
+
+  // Fork addition: show the current thinking effort next to the model
+  // name in the bottom bar, and share it with the quick-switch menu.
+  const [savedEffort, setSavedEffort] = useState<ThinkingEffort>('medium');
+  const [modelReasoning, setModelReasoning] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    acpReadThinkingEffort()
+      .then((saved) => {
+        if (!cancelled && saved) setSavedEffort(saved);
+      })
+      .catch(() => {
+        // keep the medium default
+      });
+    if (currentProvider && currentModel) {
+      fetchModelReasoning(currentProvider, currentModel)
+        .then((reasoning) => {
+          if (!cancelled) setModelReasoning(reasoning);
+        })
+        .catch(() => {
+          if (!cancelled) setModelReasoning(null);
+        });
+    } else {
+      setModelReasoning(null);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProvider, currentModel, isModelMenuOpen]);
+  const EFFORT_SHORT_LABELS: Record<ThinkingEffort, string> = {
+    off: '关闭',
+    low: '低',
+    medium: '中',
+    high: '高',
+    max: '极高',
+  };
+  const effortSuffix =
+    modelReasoning && !isModelLoading ? ` · ${EFFORT_SHORT_LABELS[savedEffort]}` : '';
   const triggerProvider =
     currentProvider && (currentModel || providerDefaultModel) ? currentProvider : null;
   const triggerTitle = triggerProvider ? `${triggerProvider}/${triggerLabel}` : triggerLabel;
@@ -258,6 +297,7 @@ export default function ModelsBottomBar({
                 )}
                 <bdi dir="auto" className="truncate">
                   {triggerLabel}
+                  {effortSuffix}
                 </bdi>
               </span>
             )}
@@ -309,6 +349,8 @@ export default function ModelsBottomBar({
             sessionId={sessionId}
             currentProvider={currentProvider}
             currentModel={currentModel}
+            effort={savedEffort}
+            onEffortChange={setSavedEffort}
             onPickModel={(provider, model) => void handleRecentModelClick({ provider, model })}
           />
           <DropdownMenuItem onSelect={() => openModalAfterMenuCloses('switch-model')}>

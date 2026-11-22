@@ -14,11 +14,7 @@ import type { ProviderInventoryModelDto } from '@aaif/goose-acp-client';
 import { DropdownMenuItem, DropdownMenuSeparator } from '../ui/dropdown-menu';
 import { useModelAndProvider } from '../ModelAndProviderContext';
 import { getModelDisplayName } from '../settings/models/predefinedModelsUtils';
-import {
-  acpListProviderModels,
-  acpReadThinkingEffort,
-  acpSaveThinkingEffort,
-} from '../../acp/providers';
+import { acpListProviderModels, acpSaveThinkingEffort } from '../../acp/providers';
 import type { ThinkingEffort } from '../../types/providers';
 
 const EFFORTS: { value: ThinkingEffort; label: string }[] = [
@@ -26,13 +22,15 @@ const EFFORTS: { value: ThinkingEffort; label: string }[] = [
   { value: 'low', label: '低 · low' },
   { value: 'medium', label: '中 · medium' },
   { value: 'high', label: '高 · high' },
-  { value: 'max', label: '最高 · max' },
+  { value: 'max', label: '极高 · xhigh' },
 ];
 
 interface QuickModelSectionsProps {
   sessionId: string | null;
   currentProvider: string | null;
   currentModel: string | null;
+  effort: ThinkingEffort;
+  onEffortChange: (effort: ThinkingEffort) => void;
   onPickModel: (provider: string, model: string) => void;
 }
 
@@ -40,14 +38,15 @@ export default function QuickModelSections({
   sessionId,
   currentProvider,
   currentModel,
+  effort,
+  onEffortChange,
   onPickModel,
 }: QuickModelSectionsProps) {
   const { changeModel } = useModelAndProvider();
   const [models, setModels] = useState<ProviderInventoryModelDto[]>([]);
-  const [effort, setEffort] = useState<ThinkingEffort>('medium');
 
   // The dropdown content mounts fresh on every open, so loading here
-  // always reflects the latest provider list and saved effort.
+  // always reflects the latest provider model list.
   useEffect(() => {
     let cancelled = false;
     if (currentProvider) {
@@ -59,13 +58,6 @@ export default function QuickModelSections({
           if (!cancelled) setModels([]);
         });
     }
-    acpReadThinkingEffort()
-      .then((saved) => {
-        if (!cancelled && saved) setEffort(saved);
-      })
-      .catch(() => {
-        // keep the medium default
-      });
     return () => {
       cancelled = true;
     };
@@ -80,7 +72,7 @@ export default function QuickModelSections({
 
   const handleEffort = async (next: ThinkingEffort) => {
     if (!currentModel || !currentProvider) return;
-    setEffort(next);
+    onEffortChange(next);
     await acpSaveThinkingEffort(next).catch(() => {
       // the session apply below still carries the effort
     });
