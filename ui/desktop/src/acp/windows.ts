@@ -7,7 +7,9 @@
  * the desktop app runs on without any model call.
  */
 import { callMcpAppTool } from './mcp-apps';
-import { acpCloseSession, acpDeleteSession, acpNewSession } from './sessions';
+import { acpDeleteSession, acpNewSession } from './sessions';
+
+const LAST_SESSION_KEY = 'goose.windows.utilitySession';
 
 export interface WinEntry {
   name: string;
@@ -45,6 +47,20 @@ async function ensureWinSession(): Promise<string> {
     creating = (async () => {
       const { sessionId } = await acpNewSession('/', undefined);
       utilitySessionId = sessionId;
+      // Retire the previous app run's utility session: deleting the
+      // newest session would make goose-serve reuse its id for the
+      // next session, which then fails tool calls ("Session not
+      // found"), so a utility session is only ever deleted once a
+      // newer session exists. Same pattern as acp/pool.ts.
+      try {
+        const prev = localStorage.getItem(LAST_SESSION_KEY);
+        localStorage.setItem(LAST_SESSION_KEY, sessionId);
+        if (prev && prev !== sessionId) {
+          await acpDeleteSession(prev);
+        }
+      } catch {
+        // best effort only
+      }
       return sessionId;
     })();
   }
@@ -59,22 +75,10 @@ export function resetWinSession(): void {
   utilitySessionId = null;
 }
 
+/** Kept for the page's unmount hook: the utility session intentionally
+ * stays alive and cached (see ensureWinSession). */
 export async function disposeWinSession(): Promise<void> {
-  const sessionId = utilitySessionId;
-  utilitySessionId = null;
-  if (!sessionId) {
-    return;
-  }
-  try {
-    await acpCloseSession(sessionId);
-  } catch {
-    // best effort only
-  }
-  try {
-    await acpDeleteSession(sessionId);
-  } catch {
-    // best effort only
-  }
+  // no-op by design
 }
 
 interface ToolOutcome {
@@ -82,7 +86,7 @@ interface ToolOutcome {
   imageDataUrl: string | null;
 }
 
-async function callWin(name: string, args: Record<string, unknown>): Promise<ToolOutcome> {
+async function callWinOnce(name: string, args: Record<string, unknown>): Promise<ToolOutcome> {
   const sessionId = await ensureWinSession();
   const result = await callMcpAppTool(sessionId, 'windows', name, args);
   const content = result.content as
@@ -102,6 +106,19 @@ async function callWin(name: string, args: Record<string, unknown>): Promise<Too
     throw new Error(text || `${name} failed`);
   }
   return { text, imageDataUrl };
+}
+
+async function callWin(name: string, args: Record<string, unknown>): Promise<ToolOutcome> {
+  // One retry on a fresh session if the cached one went stale (e.g.
+  // the backend restarted).
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await callWinOnce(name, args);
+    } catch (err) {
+      if (attempt >= 1) throw err;
+      resetWinSession();
+    }
+  }
 }
 
 export async function fetchControlStatus(): Promise<ControlState> {

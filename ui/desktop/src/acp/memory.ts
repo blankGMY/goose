@@ -4,11 +4,16 @@
  * Talks to the built-in `memory` extension's tools directly over ACP
  * (`_goose/unstable/tools/call`) from a dedicated utility session, so
  * viewing and editing memories costs no model calls. Mirrors the
- * pool.ts approach; sessions created here are closed and deleted on
- * page unmount so they never appear in the user's history.
+ * pool.ts approach: the utility session is reused for the app's whole
+ * lifetime and never deleted while it is the newest session (deleting
+ * the newest session makes goose-serve hand its id to the next
+ * session, which then fails tool calls with "Session not found").
+ * The previous run's session is retired after a newer one exists.
  */
-import { acpCloseSession, acpDeleteSession, acpNewSession } from './sessions';
+import { acpDeleteSession, acpNewSession } from './sessions';
 import { callMcpAppTool } from './mcp-apps';
+
+const LAST_SESSION_KEY = 'goose.memory.utilitySession';
 
 export type MemoryMap = Record<string, string[]>;
 
@@ -20,19 +25,23 @@ async function getUtilitySession(): Promise<string> {
   if (utilitySessionId) return utilitySessionId;
   const session = await acpNewSession('/', undefined);
   utilitySessionId = session.sessionId;
+  // Retire the previous app run's utility session (safe: no longer newest).
+  try {
+    const prev = localStorage.getItem(LAST_SESSION_KEY);
+    localStorage.setItem(LAST_SESSION_KEY, utilitySessionId);
+    if (prev && prev !== utilitySessionId) {
+      await acpDeleteSession(prev);
+    }
+  } catch {
+    // best effort only
+  }
   return utilitySessionId;
 }
 
+/** Kept for the page's unmount hook: the utility session intentionally
+ * stays alive and cached (see the header note). */
 export async function closeMemorySession(): Promise<void> {
-  if (!utilitySessionId) return;
-  const id = utilitySessionId;
-  utilitySessionId = null;
-  try {
-    await acpCloseSession(id);
-    await acpDeleteSession(id);
-  } catch {
-    // best effort cleanup
-  }
+  // no-op by design
 }
 
 function extractText(result: unknown): string {
@@ -51,12 +60,21 @@ function extractText(result: unknown): string {
 }
 
 async function callMemoryTool(name: string, args: Record<string, unknown>): Promise<string> {
-  const sessionId = await getUtilitySession();
-  const result = await callMcpAppTool(sessionId, EXTENSION, name, args);
-  if ((result as { isError?: boolean })?.isError) {
-    throw new Error(extractText(result) || `memory tool ${name} failed`);
+  // One retry on a fresh session if the cached one went stale (e.g.
+  // the backend restarted).
+  for (let attempt = 0; ; attempt++) {
+    const sessionId = await getUtilitySession();
+    try {
+      const result = await callMcpAppTool(sessionId, EXTENSION, name, args);
+      if ((result as { isError?: boolean })?.isError) {
+        throw new Error(extractText(result) || `memory tool ${name} failed`);
+      }
+      return extractText(result);
+    } catch (err) {
+      if (attempt >= 1) throw err;
+      utilitySessionId = null;
+    }
   }
-  return extractText(result);
 }
 
 export async function fetchMemories(): Promise<MemoryMap> {
