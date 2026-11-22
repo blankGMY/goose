@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router';
-import { AudioLines, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router';
+import { AudioLines, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigationContext } from './NavigationContext';
 import { useConfig } from '../ConfigContext';
@@ -14,11 +14,18 @@ import {
 import { AppEvents } from '../../constants/events';
 import { InlineEditText } from '../common/InlineEditText';
 import { SessionIndicators } from '../SessionIndicators';
-import { acpDeleteSession, acpRenameSession, type SessionListItem } from '../../acp/sessions';
+import {
+  acpDeleteSession,
+  acpListSessions,
+  acpRenameSession,
+  healSessionIdCounter,
+  newestSessionId,
+  type SessionListItem,
+} from '../../acp/sessions';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 import { formatMessageTimestamp } from '../../utils/timeUtils';
 import { cn } from '../../utils';
-import type { ProjectGroup } from '../../utils/projectSessions';
+import { normalizeProjectPath, type ProjectGroup } from '../../utils/projectSessions';
 import { defineMessages, useIntl } from '../../i18n';
 
 type StreamState = 'idle' | 'loading' | 'streaming' | 'error';
@@ -121,6 +128,7 @@ interface SessionRowProps {
   onClick: () => void;
   onRenamed: () => void;
   onDeleted?: () => void;
+  healAfterDelete?: boolean;
 }
 
 const formatTimestamp = (value?: string): string | null => {
@@ -178,6 +186,7 @@ const SessionRow: React.FC<SessionRowProps> = ({
   onClick,
   onRenamed,
   onDeleted,
+  healAfterDelete,
 }) => {
   const intl = useIntl();
   const [isEditing, setIsEditing] = useState(false);
@@ -252,6 +261,9 @@ const SessionRow: React.FC<SessionRowProps> = ({
                 }
                 await acpDeleteSession(session.id);
                 onDeleted?.();
+                if (healAfterDelete) {
+                  void healSessionIdCounter();
+                }
               }}
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -266,12 +278,134 @@ const SessionRow: React.FC<SessionRowProps> = ({
   );
 };
 
+/** All sessions in a project, across every page of the session list. */
+async function collectProjectSessions(path: string): Promise<SessionListItem[]> {
+  const matches: SessionListItem[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 10; page++) {
+    const res = await acpListSessions(cursor);
+    for (const item of res.sessions) {
+      if (normalizeProjectPath(item.workingDir) === path) {
+        matches.push(item);
+      }
+    }
+    if (!res.nextCursor) break;
+    cursor = res.nextCursor;
+  }
+  return matches;
+}
+
+interface ProjectGroupHeaderProps {
+  group: ProjectGroup;
+  isCollapsed: boolean;
+  containsActive: boolean;
+  onToggle: () => void;
+  onNewSession: () => void;
+  onDeleted: () => void;
+  onDeletedActive: () => void;
+}
+
+/**
+ * Fork addition: workspace (project group) header with hover actions —
+ * start a new session in this workspace, or delete the workspace (all
+ * of its sessions, two-step confirm like the session rows).
+ */
+const ProjectGroupHeader: React.FC<ProjectGroupHeaderProps> = ({
+  group,
+  isCollapsed,
+  containsActive,
+  onToggle,
+  onNewSession,
+  onDeleted,
+  onDeletedActive,
+}) => {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const handleDelete = async () => {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      setTimeout(() => setConfirmingDelete(false), 3000);
+      return;
+    }
+    setConfirmingDelete(false);
+    setBusy(true);
+    try {
+      const targets = await collectProjectSessions(group.path);
+      for (const target of targets) {
+        try {
+          await acpDeleteSession(target.id);
+        } catch {
+          // keep going: delete as much of the workspace as possible
+        }
+      }
+      // The newest session overall may have been among them; advance
+      // the id counter so the next new session is not poisoned.
+      await healSessionIdCounter();
+      onDeleted();
+      if (containsActive) {
+        onDeletedActive();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="group flex items-center gap-0.5 w-full px-3 pt-2 pb-0.5" title={group.path}>
+      <button
+        onClick={onToggle}
+        aria-expanded={!isCollapsed}
+        className="flex items-center gap-1 flex-1 min-w-0 text-left text-[10px] uppercase tracking-wider text-text-tertiary hover:text-text-secondary transition-colors"
+      >
+        {isCollapsed ? (
+          <ChevronRight className="w-3 h-3 flex-shrink-0" />
+        ) : (
+          <ChevronDown className="w-3 h-3 flex-shrink-0" />
+        )}
+        <span className="truncate">{group.label}</span>
+      </button>
+      <button
+        type="button"
+        aria-label="在此工作区新建会话"
+        title="在此工作区新建会话"
+        className="flex-shrink-0 rounded-full p-0.5 opacity-0 group-hover:opacity-100 text-text-secondary hover:text-text-primary transition-opacity"
+        onClick={(e) => {
+          e.stopPropagation();
+          onNewSession();
+        }}
+      >
+        <Plus className="w-3.5 h-3.5" />
+      </button>
+      <button
+        type="button"
+        aria-label={confirmingDelete ? '确认删除工作区' : '删除工作区'}
+        title={confirmingDelete ? '再点一次确认删除整个工作区（全部会话）' : '删除工作区（全部会话）'}
+        disabled={busy}
+        className={cn(
+          'flex-shrink-0 rounded-full p-0.5 transition-opacity',
+          confirmingDelete
+            ? 'opacity-100 text-red-500'
+            : 'opacity-0 group-hover:opacity-100 text-text-secondary hover:text-red-500'
+        )}
+        onClick={(e) => {
+          e.stopPropagation();
+          void handleDelete();
+        }}
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+};
+
 export const Navigation: React.FC<{
   activeLiveVoiceSessionId: string | null;
 }> = ({ activeLiveVoiceSessionId }) => {
   const intl = useIntl();
   const { isNavExpanded } = useNavigationContext();
   const location = useLocation();
+  const navigate = useNavigate();
   const { extensionsList } = useConfig();
 
   const appsExtensionEnabled = !!extensionsList.find((ext) => ext.name === 'apps')?.enabled;
@@ -343,6 +477,11 @@ export const Navigation: React.FC<{
     }
   }, [isNavExpanded, fetchSessions]);
 
+  const newestId = useMemo(
+    () => newestSessionId(recentSessions.map((session) => session.id)),
+    [recentSessions]
+  );
+
   const [isChatsExpanded, setIsChatsExpanded] = useState(true);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
 
@@ -406,19 +545,19 @@ export const Navigation: React.FC<{
                 const isCollapsed = collapsedProjects.has(group.path);
                 return (
                   <React.Fragment key={group.path}>
-                    <button
-                      onClick={() => toggleProjectCollapsed(group.path)}
-                      aria-expanded={!isCollapsed}
-                      className="flex items-center gap-1 w-full px-3 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-text-tertiary hover:text-text-secondary transition-colors"
-                      title={group.path}
-                    >
-                      {isCollapsed ? (
-                        <ChevronRight className="w-3 h-3 flex-shrink-0" />
-                      ) : (
-                        <ChevronDown className="w-3 h-3 flex-shrink-0" />
+                    <ProjectGroupHeader
+                      group={group}
+                      isCollapsed={isCollapsed}
+                      containsActive={group.sessions.some(
+                        (session) => session.id === activeSessionId
                       )}
-                      <span className="truncate">{group.label}</span>
-                    </button>
+                      onToggle={() => toggleProjectCollapsed(group.path)}
+                      onNewSession={() =>
+                        navigate('/', { state: { workingDir: group.path } })
+                      }
+                      onDeleted={fetchSessions}
+                      onDeletedActive={() => navigate('/')}
+                    />
                     {!isCollapsed &&
                       group.sessions.map((session) => (
                         <SessionRow
@@ -433,6 +572,7 @@ export const Navigation: React.FC<{
                           }}
                           onRenamed={fetchSessions}
                           onDeleted={fetchSessions}
+                          healAfterDelete={session.id === newestId}
                         />
                       ))}
                   </React.Fragment>
@@ -452,6 +592,7 @@ export const Navigation: React.FC<{
                   }}
                   onRenamed={fetchSessions}
                   onDeleted={fetchSessions}
+                  healAfterDelete={session.id === newestId}
                 />
               ))
             )}

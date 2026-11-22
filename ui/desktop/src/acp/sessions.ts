@@ -354,3 +354,46 @@ export async function acpImportSession(input: string): Promise<void> {
   const client = await getAcpClient();
   await client.goose.sessionImport_unstable({ input });
 }
+
+/**
+ * Fork additions: session-id counter healing.
+ *
+ * goose-serve hands the id of a deleted newest session to the next
+ * session/new, but that session is not registered server-side: prompt
+ * and tool calls fail with "Session not found" (verified by ACP
+ * probes). Creating and closing one throwaway session advances the
+ * counter past the poisoned id, so call this after deleting what may
+ * have been the newest session.
+ */
+export async function healSessionIdCounter(): Promise<void> {
+  try {
+    const { sessionId } = await acpNewSession('/', undefined);
+    await acpCloseSession(sessionId);
+  } catch {
+    // best effort only
+  }
+}
+
+function sessionIdRank(id: string): [string, number] {
+  const idx = id.lastIndexOf('_');
+  if (idx < 0) return [id, 0];
+  const n = Number(id.slice(idx + 1));
+  return [id.slice(0, idx), Number.isFinite(n) ? n : 0];
+}
+
+/** The newest session id among the given ids (ids look like 20261122_12). */
+export function newestSessionId(ids: string[]): string | null {
+  let best: string | null = null;
+  for (const id of ids) {
+    if (!best) {
+      best = id;
+      continue;
+    }
+    const [bd, bn] = sessionIdRank(best);
+    const [d, n] = sessionIdRank(id);
+    if (d > bd || (d === bd && n > bn)) {
+      best = id;
+    }
+  }
+  return best;
+}
