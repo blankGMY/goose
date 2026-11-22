@@ -20,6 +20,12 @@ interface Draft {
 
 const EMPTY_DRAFT: Draft = { name: '', description: '', content: '' };
 
+// Skills the agent created itself carry "origin: auto" in their
+// frontmatter; the nightly job may optimize or delete only those.
+function isAutoSkill(skill: { content?: string }): boolean {
+  return /^origin:\s*auto\s*$/m.test(skill.content ?? '');
+}
+
 export default function SkillsManagerView() {
   const [skills, setSkills] = useState<SourceEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +179,11 @@ export default function SkillsManagerView() {
                   {!isSkillWritable(skill) && skill.type === 'skill' && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-background-tertiary text-text-secondary">
                       只读
+                    </span>
+                  )}
+                  {isAutoSkill(skill) && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
+                      自动维护
                     </span>
                   )}
                 </div>
