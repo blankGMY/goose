@@ -14,6 +14,7 @@ import { getProviderMetadata, fetchModelReasoning } from '../modelInterface';
 import { getModelDisplayName } from '../predefinedModelsUtils';
 import { acpReadThinkingEffort } from '../../../../acp/providers';
 import CustomBottomBarExtras from '../../../pool/CustomBottomBarExtras';
+import QuickModelSections from '../../../bottom_menu/QuickModelSections';
 
 import { ModelSettingsPanel } from '../../localInference/ModelSettingsPanel';
 import { ScrollArea } from '../../../ui/scroll-area';
@@ -304,6 +305,12 @@ export default function ModelsBottomBar({
               <DropdownMenuSeparator />
             </>
           )}
+          <QuickModelSections
+            sessionId={sessionId}
+            currentProvider={currentProvider}
+            currentModel={currentModel}
+            onPickModel={(provider, model) => void handleRecentModelClick({ provider, model })}
+          />
           <DropdownMenuItem onSelect={() => openModalAfterMenuCloses('switch-model')}>
             <span>{intl.formatMessage(i18n.changeModel)}</span>
             <Sliders className="ml-auto h-4 w-4 rotate-90" />
