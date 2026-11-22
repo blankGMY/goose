@@ -126,3 +126,55 @@ export async function clearCategory(category: string): Promise<void> {
     is_global: true,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Memory versions (memver extension): the live store is git-versioned.
+// History, restore and the nightly changelog come from the `memver`
+// extension's tools over the same utility session - still no model calls.
+
+const MEMVER_EXTENSION = 'memver';
+
+export interface MemoryVersion {
+  sha: string;
+  date: string;
+  message: string;
+}
+
+async function callMemverTool(
+  name: string,
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  for (let attempt = 0; ; attempt++) {
+    const sessionId = await getUtilitySession();
+    try {
+      const result = await callMcpAppTool(sessionId, MEMVER_EXTENSION, name, args);
+      if ((result as { isError?: boolean })?.isError) {
+        throw new Error(extractText(result) || `memver tool ${name} failed`);
+      }
+      const structured = (result as { structuredContent?: Record<string, unknown> })
+        ?.structuredContent;
+      if (structured) return structured;
+      return JSON.parse(extractText(result)) as Record<string, unknown>;
+    } catch (err) {
+      if (attempt >= 1) throw err;
+      utilitySessionId = null;
+    }
+  }
+}
+
+export async function fetchMemoryHistory(limit = 30): Promise<MemoryVersion[]> {
+  const data = await callMemverTool('memver_history', { limit });
+  return (data.versions as MemoryVersion[]) ?? [];
+}
+
+export async function restoreMemoryVersion(sha: string): Promise<void> {
+  const data = await callMemverTool('memver_restore', { sha });
+  if (!data.ok) {
+    throw new Error(String(data.error ?? 'restore failed'));
+  }
+}
+
+export async function fetchMemoryChangelog(): Promise<string> {
+  const data = await callMemverTool('memver_changelog', {});
+  return String(data.text ?? '');
+}

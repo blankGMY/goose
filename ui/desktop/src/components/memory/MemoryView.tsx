@@ -8,8 +8,12 @@ import {
   closeMemorySession,
   editMemory,
   fetchMemories,
+  fetchMemoryChangelog,
+  fetchMemoryHistory,
   removeMemory,
+  restoreMemoryVersion,
   type MemoryMap,
+  type MemoryVersion,
 } from '../../acp/memory';
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -18,6 +22,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   user_profile: '用户画像',
   lessons: '经验教训',
   project_facts: '项目事实',
+  assistant: '助手记忆',
 };
 
 const KNOWN_CATEGORIES = Object.keys(CATEGORY_LABELS);
@@ -32,6 +37,9 @@ export default function MemoryView() {
   const [editText, setEditText] = useState('');
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [versions, setVersions] = useState<MemoryVersion[]>([]);
+  const [changelog, setChangelog] = useState('');
+  const [showVersions, setShowVersions] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -42,6 +50,16 @@ export default function MemoryView() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+    // Version history + nightly changelog are best-effort: the memver
+    // extension may not be enabled on other backends.
+    try {
+      const [v, c] = await Promise.all([fetchMemoryHistory(), fetchMemoryChangelog()]);
+      setVersions(v);
+      setChangelog(c);
+    } catch {
+      setVersions([]);
+      setChangelog('');
     }
   }, []);
 
@@ -94,6 +112,81 @@ export default function MemoryView() {
             <div className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
               加载失败：{error}
               <div className="mt-1 text-xs opacity-80">请确认 memory 扩展已启用。</div>
+            </div>
+          )}
+
+          {changelog && (
+            <div className="mt-6 rounded-lg border border-border-primary bg-background-secondary px-4 py-4">
+              <div className="text-sm font-medium text-text-primary mb-2">最近一次夜间整理</div>
+              <pre className="whitespace-pre-wrap text-xs leading-relaxed text-text-secondary max-h-56 overflow-y-auto">
+                {changelog}
+              </pre>
+            </div>
+          )}
+
+          {versions.length > 0 && (
+            <div className="mt-4 rounded-lg border border-border-primary bg-background-secondary px-4 py-4">
+              <button
+                type="button"
+                className="text-sm font-medium text-text-primary"
+                onClick={() => setShowVersions((v) => !v)}
+              >
+                版本历史（{versions.length}）{showVersions ? ' ▲' : ' ▼'}
+              </button>
+              {showVersions && (
+                <div className="mt-2 space-y-1">
+                  {versions.map((v) => {
+                    const key = `restore:${v.sha}`;
+                    return (
+                      <div
+                        key={v.sha}
+                        className="flex items-center gap-2 text-xs text-text-secondary py-1 border-b border-border-primary/50 last:border-0"
+                      >
+                        <span className="shrink-0 tabular-nums">{v.date}</span>
+                        <span className="flex-1 truncate" title={v.message}>
+                          {v.message}
+                        </span>
+                        <span className="shrink-0 opacity-60">{v.sha}</span>
+                        {confirmKey === key ? (
+                          <>
+                            <button
+                              type="button"
+                              className="shrink-0 text-red-500 font-medium"
+                              disabled={busy}
+                              onClick={() =>
+                                void run(async () => {
+                                  await restoreMemoryVersion(v.sha);
+                                })
+                              }
+                            >
+                              确认恢复
+                            </button>
+                            <button
+                              type="button"
+                              className="shrink-0"
+                              onClick={() => setConfirmKey(null)}
+                            >
+                              取消
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="shrink-0 text-text-primary"
+                            disabled={busy}
+                            onClick={() => setConfirmKey(key)}
+                          >
+                            恢复到此版本
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <p className="text-[11px] text-text-secondary pt-1">
+                    恢复前会自动存一份当前状态，恢复本身也可以再撤销。
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
