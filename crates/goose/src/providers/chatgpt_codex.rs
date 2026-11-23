@@ -529,6 +529,16 @@ fn create_codex_request(
         );
     }
 
+    // The ChatGPT backend derives prompt-cache affinity from the session id
+    // (sent as the `session-id` header in post_streaming and mirrored here as
+    // `prompt_cache_key`). Without it, follow-up requests in a session mostly
+    // miss the prompt cache even when they extend the previous request byte
+    // for byte (upstream issue #13609). The id comes from the session-scoped
+    // task local; outside a session scope nothing is sent, as before.
+    if let Some(session_id) = crate::session_context::current_session_id() {
+        payload_obj.insert("prompt_cache_key".to_string(), json!(session_id));
+    }
+
     Ok(payload)
 }
 
@@ -1068,6 +1078,18 @@ impl ChatGptCodexProvider {
             .map_err(|e| ProviderError::Authentication(e.to_string()))?;
 
         let mut headers = reqwest::header::HeaderMap::new();
+        // Cache affinity: the ChatGPT backend routes by the `session-id`
+        // header (see create_codex_request / upstream issue #13609). The
+        // generic session request builder only sets Goose's internal
+        // `agent-session-id` header, which the backend does not use.
+        if let Some(session_id) = crate::session_context::current_session_id() {
+            if let Ok(value) = reqwest::header::HeaderValue::from_str(&session_id) {
+                headers.insert(
+                    reqwest::header::HeaderName::from_static("session-id"),
+                    value,
+                );
+            }
+        }
         if let Some(account_id) = &token_data.account_id {
             headers.insert(
                 reqwest::header::HeaderName::from_static("chatgpt-account-id"),
@@ -1771,6 +1793,24 @@ mod tests {
 
         let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
         assert!(payload.get("temperature").is_none());
+    }
+
+    #[test]
+    fn test_create_codex_request_omits_prompt_cache_key_without_session() {
+        let config = ModelConfig::new("gpt-5.5");
+
+        let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
+        assert!(payload.get("prompt_cache_key").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_create_codex_request_sets_prompt_cache_key_from_session() {
+        crate::session_context::with_session_id(Some("20261123_42".to_string()), async {
+            let config = ModelConfig::new("gpt-5.5");
+            let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
+            assert_eq!(payload["prompt_cache_key"], json!("20261123_42"));
+        })
+        .await;
     }
 
     #[test_case(

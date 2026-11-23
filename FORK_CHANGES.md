@@ -3,7 +3,7 @@
 本文档记录本 fork 相对上游 Goose 的全部改动，供日后上游更新 rebase 时逐项重打。
 策略：新文件 + 最小挂接行，尽量不改上游原代码；不可避免的上游小改动保持最小并可清单化重打。
 
-> 最后更新：2026-11-23（剪枝层部署完成时）。带「待补」标记的条目细节尚未整理完。
+> 最后更新：2026-11-23（新增第 4 节：codex 缓存亲和）。带「待补」标记的条目细节尚未整理完。
 
 ---
 
@@ -81,7 +81,28 @@
 
 ---
 
-## 4. 此前几批 fork 改动（条目位置，待补细节）
+## 4. chatgpt_codex 缓存亲和：session-id 头 + prompt_cache_key（2026-11-23）
+
+目的：修复 GPT 订阅通道提示缓存几乎不命中（实测会话续接调用零命中率约 85%）。上游 issue #13609 实测：该 provider 不发任何后端可用的会话亲和标识；Codex 官方客户端靠 `session-id` 头建立缓存亲和（openai/codex client.rs 注释原文 "ChatGPT derives cache affinity from the Responses session-id header"），并以会话 id 派生 `prompt_cache_key`。本 fork 原有通用机制发的头名是内部用的 `agent-session-id`，后端不认；请求体也无 `prompt_cache_key`。
+
+### 改动文件（共 1 个）
+
+| 文件 | 动作 | 说明 |
+|---|---|---|
+| `crates/goose/src/providers/chatgpt_codex.rs` | 修改 | `create_codex_request`：会话作用域内（`crate::session_context::current_session_id()` 有值时）在 payload 顶层加 `prompt_cache_key` = 会话 id；`post_streaming`：同一 id 加字面名 `session-id` 的 HTTP 头。作用域外不发，保持原行为兜底。新增 2 个单元测试（无会话时不带键、会话内键值等于会话 id） |
+
+### 验证方法
+
+- 本地：`cargo test -p goose --lib providers::chatgpt_codex` 全过（含新增 2 测试）。
+- 部署后实测：ACP 探针建一个 GPT 会话、发一条会触发多次顺序工具调用的短任务，读 `usage_ledger` 该会话各行 `cache_read_tokens`：续接调用应不再大面积为 0。后端偶发零命中在上游报告中修复后仍存在，验收看零命中率与缓存占比的整体变化，不要求 100%。
+
+### 回滚办法
+
+- 换回上一版二进制（部署时在 Pi `~/goose/` 留 `.bak` 备份）后重启 `goose-serve`；或回退本文件后走 CI 重编。无配置键、无数据迁移。
+
+---
+
+## 5. 此前几批 fork 改动（条目位置，待补细节）
 
 以下条目先占位，逐项补齐文件清单、提交、配置键与验证方法后再删此行。
 
